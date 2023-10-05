@@ -1,9 +1,8 @@
-﻿using System.ComponentModel.DataAnnotations;
-
-namespace OnDemandcarWashSystemAPI.DTOs
+﻿namespace OnDemandcarWashSystemAPI.DTOs
 {
-	public class CreateUserdto
+	public class Userdto
 	{
+		public int Id { get; set; }
 		public string? FullName { get; set; }
 		public string? Email { get; set; }
 		public string? Password { get; set; }

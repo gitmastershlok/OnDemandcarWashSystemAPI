@@ -1,51 +1,116 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
 using OnDemandcarWashSystemAPI.Models;
-using OnDemandcarWashSystemAPI.Services;
-using OnDemandcarWashSystemAPI.Interfaces;
+using Microsoft.AspNetCore.Cors;
+using Microsoft.IdentityModel.Tokens;
+using OnDemandcarWashSystemAPI.Data;
+using OnDemandcarWashSystemAPI.DTOs;
+using System.IdentityModel.Tokens.Jwt;
+using System.Security.Claims;
+using System.Security.Cryptography;
 
 namespace OnDemandcarWashSystemAPI.Controllers
 {
 	[Route("api/[controller]")]
 	[ApiController]
-	public class LoginController : ControllerBase
+	[EnableCors("AllowOrigin")]
+	public class AuthController : ControllerBase
 	{
-		private readonly LoginService _Service;
-		private IToken _token;
+		private readonly OnDemandDbContext context;
+		private readonly IConfiguration configuration;
 
-		public LoginController(LoginService service, IToken token)
+		public AuthController(OnDemandDbContext context, IConfiguration configuration)
 		{
+			this.context = context;
+			this.configuration = configuration;
+		}
 
-			_Service = service;
-			_token = token;
+		[HttpPost("register")]
+		public async Task<ActionResult<User>> Register(Registerdto request)
+		{
+			User user = new User();
+			CreatePasswordHash(request.Password, out byte[] passwordHash, out byte[] passwordSalt);
+			user.FullName = request.FullName;
+			user.Email = request.Email;
+			user.PasswordHash = passwordHash;
+			user.PasswordSalt = passwordSalt;
+			user.Address = request.Address;
+			user.Role = request.Role;
+
+
+			await context.Users.AddAsync(user);
+			await context.SaveChangesAsync();
+
+			return Ok(user);
 		}
 
 		[HttpPost("login")]
-
-		public async Task<ActionResult<string>> Login(Login item)
+		public async Task<ActionResult<string>> Login(Logindto request)
 		{
-
-
-			var res = await _Service.Login(item);
-
-
-			if (res == 200)
+			var user = await context.Users.FirstOrDefaultAsync(x => x.Email == request.Email);
+			if (user == null)
 			{
-				string token = _token.CreateToken(item);
-				return token;
-
-
+				return BadRequest("User not found");
 			}
-			else if (res == 404)
+			if (!VerifyPasswordHash(request.Password, user.PasswordHash, user.PasswordSalt))
 			{
-				return BadRequest("You are not registered");
+				return BadRequest("Password is not correct");
 			}
-			else if (res == 401)
+			string token = CreateToken(user);
+			return Ok(new { Token = token });
+		}
+
+
+
+		private string CreateToken(User login)
+		{
+			string check = "";
+			if (login.Role == "Customer")
 			{
-				return Unauthorized("Password is wrong");
+				check = "Customer";
+			}
+			else if (login.Role == "Washer")
+			{
+				check = "Washer";
 			}
 			else
 			{
-				return Unauthorized("Your account is blocked,please contact Admininstrator");
+				check = "Admin";
+			}
+			List<Claim> claims = new List<Claim>()
+			{
+				new Claim(ClaimTypes.Name,login.Email),
+				new Claim(ClaimTypes.Surname,login.FullName),
+				new Claim(ClaimTypes.Role,check),
+				new Claim(ClaimTypes.Sid,Convert.ToString(login.Id)),
+			};
+			var key = new SymmetricSecurityKey(System.Text.Encoding.UTF8.GetBytes(configuration.GetSection("AppSettings:Token").Value));
+
+			var cred = new SigningCredentials(key, SecurityAlgorithms.HmacSha512Signature);
+
+			var token = new JwtSecurityToken(
+				claims: claims,
+				expires: DateTime.Now.AddDays(1),
+				signingCredentials: cred);
+
+			var jwt = new JwtSecurityTokenHandler().WriteToken(token);
+			return jwt;
+		}
+
+		private void CreatePasswordHash(string password, out byte[] passwordHash, out byte[] passwordSalt)
+		{
+			using (var hmac = new HMACSHA512())
+			{
+				passwordSalt = hmac.Key;
+				passwordHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+			}
+		}
+		private bool VerifyPasswordHash(string password, byte[] passwordHash, byte[] passwordSalt)
+		{
+			using (var hmac = new HMACSHA512(passwordSalt))
+			{
+				var computedHash = hmac.ComputeHash(System.Text.Encoding.UTF8.GetBytes(password));
+				return computedHash.SequenceEqual(passwordHash);
 			}
 		}
 	}

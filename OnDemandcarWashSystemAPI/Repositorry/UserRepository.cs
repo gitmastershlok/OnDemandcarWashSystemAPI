@@ -5,47 +5,60 @@ using OnDemandcarWashSystemAPI.Models;
 
 namespace OnDemandcarWashSystemAPI.Repositorry
 {
-	public class UserRepository : IRepository<UserDetails, int>
+	public class UserRepository : IUser
 	{
-		CarWashContext context;
-		public UserRepository(CarWashContext context) => this.context = context;
-		public async Task<int> CreateAsync(UserDetails userDetails)
-		{
+		private readonly OnDemandDbContext context;
 
-			context.Users.Add(userDetails);
+		public UserRepository(OnDemandDbContext context)
+		{
+			this.context = context;
+		}
+
+		public async Task<User> CreateUser(User user)
+		{
+			await context.Users.AddAsync(user);
 			await context.SaveChangesAsync();
-			var response = StatusCodes.Status201Created;
-			return response;
+			return user;
+		}
+
+
+
+		public async Task<List<User>> GetUsers()
+		{
+			return await context.Users.ToListAsync();
+		}
+		public async Task<User> GetUserById(int id)
+		{
+			return await context.Users.FirstOrDefaultAsync(x => x.Id == id);
 
 		}
 
-		public async Task<int> DeleteAsync(UserDetails userDetails)
+		public async Task<User> UpdateUser(int id, User user)
 		{
-			context.Users.Remove(userDetails);
+			var existingdata = await context.Users.FirstOrDefaultAsync(x => x.Id == id);
+			if (user == null)
+			{
+				return null;
+			}
+
+			existingdata.FullName = user.FullName;
+			existingdata.Email = user.Email;
+
+			existingdata.Address = user.Address;
+
 			await context.SaveChangesAsync();
-			var response = StatusCodes.Status200OK;
-			return response;
+			return existingdata;
 		}
-
-		public bool Exists(int id)
+		public async Task<User> DeleteUser(int id)
 		{
-			return (context.Users?.Any(e => e.UserId == id)).GetValueOrDefault();
-		}
-
-		public async Task<IEnumerable<UserDetails>> GetAsync()
-		{
-			return await context.Users.AsNoTracking().ToListAsync();
-		}
-
-		public async Task<UserDetails> GetIdAsync(int id) => 
-			await context.Users.AsNoTracking().FirstOrDefaultAsync(c => c.UserId == id);
-
-		public async Task<int> UpdateAsync(UserDetails item)
-		{
-			context.Entry(item).State = EntityState.Modified;
+			var user = await context.Users.FirstOrDefaultAsync(x => x.Id == id);
+			if (user == null)
+			{
+				return null;
+			}
+			context.Users.Remove(user);
 			await context.SaveChangesAsync();
-			var response = StatusCodes.Status200OK;
-			return response;
+			return user;
 		}
 	}
 }
